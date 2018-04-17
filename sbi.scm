@@ -1,4 +1,8 @@
 #!/afs/cats.ucsc.edu/courses/cmps112-wm/usr/racket/bin/mzscheme -qr
+;;
+;; Name: Vy Pham
+;; ID: vyapham
+;;
 
 (define *function-table* (make-hash))
 (for-each
@@ -19,13 +23,13 @@
       (exp, exp)
       (round, round)
       (floor, floor)
-;      (log, )
-;      (log10, )
+      (log, log)
+      (log10, (lambda (a) (/ (log a) (log 10.0))))
 ;      (log2, )
       (sqrt, sqrt)
       (trunc, truncate)
       (=, equal?)
-      (<> , (lambda (x y) (not (equal? x y))))
+      (<> , (lambda (a b) (not (equal? a b))))
       (<=, <=)
       (>=, >=)
       (<, <)
@@ -54,7 +58,7 @@
     (
       (eqv? (car statement) 'let)
       ;; let-statement
-      (let-statement (car(cadr statement)) (cadr(cadr statement)))
+      (let-statement (car(cdr statement)) (cadr(cdr statement)))
     )
     (
       (eqv? (car statement) 'goto)
@@ -69,18 +73,28 @@
     (
       (eqv? (car statement) 'print)
       ;; print-statement
-      (begin (print-statement (cdr statement)) (printf "~n"))
-      
+      (if (vector? (cdr statement))
+	  (print-statement (vector-ref (car(cdr statement)) (inexact->exact(-(expression-eval(cadr(cdr statement))) 1))))
+	  (print-statement (cdr statement))
+      )
+      (printf "~n")
     )
     (
       (eqv? (car statement) 'input)
-      ;; input
+      ;; input-statement
+      (hash-set! *variable-table* 'inputcount (length (cdr statement)))
+      (input-statement (cdr statement))
+    )
+    (else
+      (list? statement)
+      (print-statement (cdr statement))
+      (printf "~n")
     )
   )
 )
 
 (define (dim-statement var expression)
-  (hash-set! *variable-table* var (make-vector (expression-eval expression)))
+  (hash-set! *variable-table* var (make-vector (inexact->exact(expression-eval expression))))
 )
 
 (define (let-statement var expression)
@@ -90,10 +104,10 @@
     )
     (
       (pair? var)
-      (if (and (vector? (car var)) (<= (cadr var) (vector-length (hash-ref *variable-table* (car var)))))
+      (if  (<= (- (expression-eval (cadr var)) 1) (vector-length (hash-ref *variable-table* (car var))))
         (vector-set!
           (hash-ref *variable-table* (car var))
-          (cadr var)
+          (inexact->exact (- (expression-eval (cadr var)) 1) )
           (expression-eval expression)
         )
         (printf("Error!"))
@@ -103,18 +117,18 @@
 )
 
 (define (goto-statement label)
-  (if (hash-has-key? *label-table* label)
-  ;; if the label is in the label-table, execute the program from the label
-    (statement-eval (hash-ref *label-table* label))
-  ;; if not, print error
-    (void)
+(cond 
+  (
+    (not(null? (hash-ref *label-table* label)))
+    (statement-eval (hash-ref label-table-2 label))
+    (run-program (hash-ref *label-table* label))
+  )
   )
 )
 
 (define (if-statement condition label)
-  (if ((hash-ref *function-table* (car condition)) (expression-eval (car(cdr condition))) (expression-eval (cadr(cdr condition))) )
+  (when ((hash-ref *function-table* (car condition)) (expression-eval (car(cdr condition))) (expression-eval (cadr(cdr condition))) )
     (goto-statement label)
-    (void)
   )
 )
 
@@ -128,9 +142,15 @@
   )
 )
 
-;(define (input-statement )
-
-;)
+(define (input-statement inputList)
+  (cond 
+   (
+    (null? inputList)
+    (hash-set! *variable-table* (car inputList) (read))
+    (input-statement (cdr inputList))
+   )
+ )
+)
 
 (define (expression-eval expression)
   (cond
@@ -146,7 +166,13 @@
       (pair? expression)
       (if (hash-has-key? *function-table* (car expression))
         (apply (hash-ref *function-table* (car expression)) (map expression-eval (cdr expression)) )
-        (void)
+        (if (and (vector? (car expression)) (hash-has-key? *variable-table* (car expression)))
+          (vector-ref 
+            (hash-ref *variable-table* (car expression))
+            (inexact->exact (- (expression-eval (cadr expression)) 1) )
+          )
+          (void)
+        )
       )
     )
   )
@@ -181,28 +207,44 @@
                   (close-input-port inputfile)
                          program))))
 
-;(define (write-program-by-line filename program)
-;    (printf "==================================================~n")
-;    (printf "~a: ~s~n" *run-file* filename)
-;    (printf "==================================================~n")
-;    (printf "(~n")
-;      (map (lambda (line) (printf "~s~n" line)) program)
-;      (printf ")~n"
-;    )
-;)
+(define (write-program-by-line filename program)
+    (printf "==================================================~n")
+    (printf "~a: ~s~n" *run-file* filename)
+    (printf "==================================================~n")
+    (printf "(~n")
+      (map (lambda (line) (printf "~s~n" line)) program)
+      (printf ")~n"
+    )
+)
 
 (define *label-table* (make-hash))
+(define label-table-2 (make-hash))
 
 ;; program ~ list
 (define (make-labels program)
-  (if (= (length (car program)) 1)
-    (make-labels (cdr program))
-    ;; else if a symbol
-    (if (symbol? (cadr (car program) ))
-      (hash-set! *label-table* (cadr program) (cdr program) )
-      ;; else
-      (make-labels)
+  (if (not(null? program))
+    (if (= (length (car program)) 1)
+      (make-labels (cdr program))
+      ;; else if a symbol
+      (cond 
+        (
+          (symbol? (cadr (car program) ))
+          (hash-set! *label-table* (cadr (car program)) (cdr program) )
+          (if (eqv? (cadr (car program)) (last (car program))) 
+            (void)
+            (hash-set! label-table-2 (cadr (car program)) (caddr(car program)))
+          )
+          (if (not(null? (cdr program))) (make-labels (cdr program)) (void))
+        )
+        (else
+          (if (not(null? (cdr program)))
+            (make-labels (cdr program))
+            (void)
+          )
+        )
+      )
     )
+    (void)
   )
 )
 
@@ -214,11 +256,17 @@
       (if (symbol? (cadr(car program)))
         (when (not(null? (caddr(car program))))
           (statement-eval (caddr(car program)))
-          (run-program (hash-ref *label-table* (cadr(car program))) )
+	  (if (not(eqv? (car(caddr(car program))) 'goto))
+            (run-program (cdr program) )
+            (void)
+          )
         )
         (when (list? (cadr(car program)))
           (statement-eval (cadr(car program)))
-          (run-program (cdr program))
+          (if (not(eqv? (car(cadr(car program))) 'goto))
+            (run-program (cdr program))
+            (void)
+          )
         )
       )
     )
@@ -234,10 +282,10 @@
                 (program (readlist-from-inputfile sbprogfile))
               )
 
-;              (write-program-by-line sbprogfile program)
+	  ;;(write-program-by-line sbprogfile program)
               (make-labels program)
               (run-program program)
-        )
+	 )
     )
 )
 
