@@ -25,7 +25,7 @@
       (floor, floor)
       (log, log)
       (log10, (lambda (a) (/ (log a) (log 10.0))))
-;      (log2, )
+      (log2, (lambda (a) (/ (log a) (log 2.0))))
       (sqrt, sqrt)
       (trunc, truncate)
       (=, equal?)
